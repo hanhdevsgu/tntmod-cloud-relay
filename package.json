@@ -1,0 +1,12 @@
+{
+  "name": "tntmod-team-relay",
+  "version": "1.0.0",
+  "description": "24/7 Free Cloud Relay Server for TNT Auto-Logistics Minecraft Mod",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
