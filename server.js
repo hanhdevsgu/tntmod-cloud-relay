@@ -3,7 +3,7 @@ const WebSocket = require('ws');
 
 const PORT = process.env.PORT || 8765;
 
-// Create HTTP server for Cloud platforms (Render/Glitch/Railway/Render health check)
+// Create HTTP server for Cloud platforms (Render health check)
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('TNT Auto-Logistics Team Relay Server is ONLINE 24/7!\nActive rooms: ' + rooms.size);
@@ -14,12 +14,38 @@ const wss = new WebSocket.Server({ server });
 
 // Map: roomId -> Set<WebSocket>
 const rooms = new Map();
+// Map: ws -> { room: string, player: string }
+const clientInfo = new Map();
 // Map: roomId -> Map<key, BlockData>
 const persistentRoomState = new Map();
 
+function broadcastUserList(room) {
+    const clients = rooms.get(room);
+    if (!clients) return;
+    const userList = [];
+    for (const ws of clients) {
+        if (ws.readyState === WebSocket.OPEN && clientInfo.has(ws)) {
+            const name = clientInfo.get(ws).player;
+            if (name && !userList.includes(name)) {
+                userList.push(name);
+            }
+        }
+    }
+    const payload = JSON.stringify({
+        action: 'user_list',
+        room: room,
+        users: userList
+    });
+    for (const ws of clients) {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(payload);
+        }
+    }
+}
+
 wss.on('connection', (ws) => {
     let currentRoom = 'default';
-    let playerName = 'unknown';
+    let playerName = 'player';
 
     ws.on('message', (data) => {
         try {
@@ -30,6 +56,8 @@ wss.on('connection', (ws) => {
             if (msg.action === 'join') {
                 currentRoom = msg.room || 'default';
                 playerName = msg.player || 'player';
+                clientInfo.set(ws, { room: currentRoom, player: playerName });
+
                 if (!rooms.has(currentRoom)) {
                     rooms.set(currentRoom, new Set());
                 }
@@ -52,6 +80,13 @@ wss.on('connection', (ws) => {
                         ws.send(JSON.stringify(syncMsg));
                     }
                 }
+
+                // Phát sóng danh sách người chơi trong phòng cho toàn bộ client
+                broadcastUserList(currentRoom);
+
+            } else if (msg.action === 'query_users') {
+                broadcastUserList(msg.room || currentRoom);
+
             } else if (msg.action === 'update') {
                 const room = msg.room || currentRoom || 'default';
                 if (!persistentRoomState.has(room)) {
@@ -104,8 +139,10 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => {
+        clientInfo.delete(ws);
         if (currentRoom && rooms.has(currentRoom)) {
             rooms.get(currentRoom).delete(ws);
+            broadcastUserList(currentRoom);
         }
     });
 });
